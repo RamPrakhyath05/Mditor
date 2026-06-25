@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { EditorContent, Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -21,21 +21,19 @@ import ListItem from '@tiptap/extension-list-item'
 import Link from '@tiptap/extension-link'
 import HardBreak from '@tiptap/extension-hard-break'
 import Highlight from '@tiptap/extension-highlight'
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
 import * as Y from 'yjs'
-import { IndexeddbPersistence } from 'y-indexeddb'
 import { GoDownload } from 'react-icons/go'
 import { format } from 'date-fns'
 import { useDocStore } from '@/store/docStore'
+import { api } from '@/lib/api'
+import { WebsocketProvider } from 'y-websocket'
 
-// Collaboration
-import { WebrtcProvider } from 'y-webrtc'
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
-
-const EditorComponent = ({ username }) => {
+const EditorComponent = ({ username }: { username: string | null }) => {
   const { docName, setDocName } = useDocStore()
   const [editor, setEditor] = useState<Editor | null>(null)
+  const saveTimeout = useRef<NodeJS.Timeout | null>(null)
 
-  // Load last-used-doc only if docName is not set
   useEffect(() => {
     if (!docName) {
       const saved = localStorage.getItem('last-used-doc')
@@ -43,27 +41,15 @@ const EditorComponent = ({ username }) => {
     }
   }, [docName, setDocName])
 
-  // Set up editor if docName exists
   useEffect(() => {
     if (!docName) return
 
     const ydoc = new Y.Doc()
-    const provider = new IndexeddbPersistence(docName, ydoc)
-
-    provider.on('synced', () => {
-      localStorage.setItem('last-used-doc', docName)
-      const existing = JSON.parse(localStorage.getItem('docList') || '[]')
-      if (!existing.includes(docName)) {
-        localStorage.setItem('docList', JSON.stringify([...existing, docName]))
-      }
-    })
-
-    const roomName = `webrtc-${docName}`
-    const webrtcProvider = new WebrtcProvider(roomName, ydoc)
-    const user = {
-      name: username || 'Anonymous',
-      color: '#' + Math.floor(Math.random() * 0xffffff).toString(16),
-    }    
+    const provider = new WebsocketProvider(
+      "ws://localhost:1234",
+      docName,
+      ydoc
+    )
     const newEditor = new Editor({
       extensions: [
         StarterKit.configure({ history: false }),
@@ -73,8 +59,11 @@ const EditorComponent = ({ username }) => {
         }),
         Collaboration.configure({ document: ydoc }),
         CollaborationCursor.configure({
-          provider: webrtcProvider,
-          user,
+          provider,
+          user: {
+            name: username || "Anonymous",
+            color: "#22c55e",
+          },
         }),
         Paragraph,
         Text,
@@ -98,14 +87,32 @@ const EditorComponent = ({ username }) => {
       },
       autofocus: true,
       content: '',
+      onUpdate: ({ editor }) => {
+        if (saveTimeout.current) clearTimeout(saveTimeout.current)
+        saveTimeout.current = setTimeout(async () => {
+          const content = editor.getJSON()
+          try {
+            await api.updateDoc(docName, content)
+          } catch (err) {
+            console.error('Auto save failed:', err)
+          }
+        }, 1000)
+      },
+    })
+
+    api.getDoc(docName).then((doc) => {
+      if (doc?.content) {
+        newEditor.commands.setContent(doc.content)
+      }
     })
 
     setEditor(newEditor)
 
     return () => {
       provider.destroy()
-      webrtcProvider.destroy()
+      ydoc.destroy()
       newEditor.destroy()
+      if (saveTimeout.current) clearTimeout(saveTimeout.current)
     }
   }, [docName])
 
@@ -159,7 +166,6 @@ const EditorComponent = ({ username }) => {
     URL.revokeObjectURL(url)
   }
 
-  // ➤ No document selected
   if (!docName) {
     return (
       <div className="p-4 text-gray-400 h-full flex items-center justify-center bg-[#2b2b2b] rounded-lg">
@@ -168,14 +174,10 @@ const EditorComponent = ({ username }) => {
     )
   }
 
-  // ➤ Document selected, but editor not ready
   if (!editor) {
-    return (
-      <div className="p-4 text-gray-300">Loading your document...</div>
-    )
+    return <div className="p-4 text-gray-300">Loading your document...</div>
   }
 
-  // ➤ Editor is ready
   return (
     <div className="p-4 relative h-full">
       <div className="h-full overflow-y-auto rounded-lg bg-[#2b2b2b] p-6 tiptap">

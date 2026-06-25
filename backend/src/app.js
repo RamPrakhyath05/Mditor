@@ -1,0 +1,14 @@
+const express = require('express')
+const cors = require('cors')
+const authRoutes = require('./routes/auth')
+const docsRoutes = require('./routes/docs')
+
+const app = express()
+
+app.use(cors())
+app.use(express.json())
+
+app.use('/auth', authRoutes)
+app.use('/docs', docsRoutes)
+
+module.exports = app

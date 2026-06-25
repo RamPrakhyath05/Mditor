@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Editor",
-  description: "A blazin' fast real time markdown editor.",
+  title: "Mditor",
+  description: "A real time collaborative markdown editor.",
 };
 
 export default function RootLayout({

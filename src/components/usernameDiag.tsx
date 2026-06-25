@@ -1,82 +1,104 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
+import { api } from '@/lib/api'
 
-interface UsernameDialogProps {
-  onSave: (username: string) => void
+interface AuthDialogProps {
+  onAuth: (username: string) => void
 }
 
-// Helper functions for IndexedDB
-const openDB = () =>
-  new Promise<IDBDatabase>((resolve) => {
-    const request = indexedDB.open('userPrefs', 1)
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result
-      if (!db.objectStoreNames.contains('prefs')) {
-        db.createObjectStore('prefs')
-      }
-    }
-    request.onsuccess = (event: any) => resolve(event.target.result)
-  })
-
-const getUsernameFromDB = async (): Promise<string | null> => {
-  const db = await openDB()
-  return new Promise((resolve) => {
-    const tx = db.transaction('prefs', 'readonly')
-    const store = tx.objectStore('prefs')
-    const req = store.get('username')
-    req.onsuccess = () => resolve(req.result || null)
-    req.onerror = () => resolve(null)
-  })
-}
-
-const saveUsernameToDB = async (username: string) => {
-  const db = await openDB()
-  const tx = db.transaction('prefs', 'readwrite')
-  const store = tx.objectStore('prefs')
-  store.put(username, 'username')
-  tx.oncomplete = () => db.close()
-}
-
-const UsernameDialog: React.FC<UsernameDialogProps> = ({ onSave }) => {
+const AuthDialog: React.FC<AuthDialogProps> = ({ onAuth }) => {
+  const [isLogin, setIsLogin] = useState(true)
   const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    getUsernameFromDB().then((name) => {
-      if (name) {
-        setUsername(name)
-        onSave(name)
+  const handleSubmit = async () => {
+    if (!username.trim() || !password.trim()) {
+      setError('Both fields are required')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const res = isLogin
+        ? await api.login(username, password)
+        : await api.register(username, password)
+
+      if (res.error) {
+        setError(res.error)
+        return
       }
-    })
-  }, [onSave])
 
-  const handleSave = async () => {
-    if (username.trim()) {
-      await saveUsernameToDB(username.trim())
-      onSave(username.trim())
+      if (isLogin) {
+        localStorage.setItem('token', res.token)
+        localStorage.setItem('username', res.username)
+        onAuth(res.username)
+      } else {
+        // After register, auto login
+        const loginRes = await api.login(username, password)
+        if (loginRes.error) {
+          setError(loginRes.error)
+          return
+        }
+        localStorage.setItem('token', loginRes.token)
+        localStorage.setItem('username', loginRes.username)
+        onAuth(loginRes.username)
+      }
+    } catch (err) {
+      setError('Something went wrong')
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
       <div className="bg-[#1e1e1e] p-6 rounded-lg w-80 shadow-lg text-white">
-        <h2 className="text-lg font-semibold mb-4">Enter Your Username</h2>
+        <h2 className="text-lg font-semibold mb-4">
+          {isLogin ? 'Login to Mditor' : 'Create an Account'}
+        </h2>
+
+        {error && (
+          <p className="text-red-400 text-sm mb-3">{error}</p>
+        )}
+
         <input
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full p-2 rounded bg-[#2a2a2a] border border-gray-600 mb-4 text-white outline-none"
-          placeholder="Your name..."
+          className="w-full p-2 rounded bg-[#2a2a2a] border border-gray-600 mb-3 text-white outline-none"
+          placeholder="Username"
         />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full p-2 rounded bg-[#2a2a2a] border border-gray-600 mb-4 text-white outline-none"
+          placeholder="Password"
+          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+        />
+
         <button
-          onClick={handleSave}
-          className="w-full bg-green-500 hover:bg-green-400 p-2 rounded transition"
+          onClick={handleSubmit}
+          disabled={loading}
+          className="w-full bg-green-500 hover:bg-green-400 p-2 rounded transition disabled:opacity-50"
         >
-          Save
+          {loading ? 'Please wait...' : isLogin ? 'Login' : 'Register'}
         </button>
+
+        <p
+          className="text-center text-sm text-gray-400 mt-3 cursor-pointer hover:text-white transition"
+          onClick={() => { setIsLogin(!isLogin); setError('') }}
+        >
+          {isLogin ? "Don't have an account? Register" : 'Already have an account? Login'}
+        </p>
       </div>
     </div>
   )
 }
 
-export default UsernameDialog
+export default AuthDialog
