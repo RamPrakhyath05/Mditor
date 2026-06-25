@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: mditor-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: monu2508
+      POSTGRES_DB: mditor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: mditor-backend
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - backend/.env
+    ports:
+      - "3001:3001"
+
+  websocket:
+    build:
+      context: .
+      dockerfile: Dockerfile.ws
+    container_name: mditor-ws
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - backend/.env
+    ports:
+      - "1234:1234"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mditor-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
