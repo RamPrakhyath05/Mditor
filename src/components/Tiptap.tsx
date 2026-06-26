@@ -46,7 +46,7 @@ const EditorComponent = ({ username }: { username: string | null }) => {
 
     const ydoc = new Y.Doc()
     const provider = new WebsocketProvider(
-      "ws://localhost:1234",
+      process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:1234",
       docName,
       ydoc
     )
